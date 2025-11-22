@@ -11,6 +11,17 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define WWW_DIR "./www/"
+
+#define SAFE_DO(cond) \
+    do { \
+        if (cond == SIZE_MAX ) { \
+            goto CLOSE ;  \
+        } \
+    } while (0)
+
+
+
+
 int main() {
 int server_fd, client_fd;
 struct sockaddr_in address;
@@ -48,19 +59,42 @@ while (1)
         continue;
     }
     buffer[valread] = '\0';
-    printf("REQUEST:\n%s\n", buffer);
-    char *response =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/plain\r\n"
-        "Content-Length: 13\r\n"
-        "\r\n"
-        "Hello, world!";
+
+
+    printf("-------------------------------\n%s\n", buffer);
+    char response [BUFFER_SIZE] ;
+
+
+    char* method = strlib_strtok(buffer , " ") ;
+    if (strlib_strcmp(method , "GET") != STRCMP_EQUAL) 
+    {
+        SAFE_DO( strlib_strcpy(response , BUFFER_SIZE , 
+            "HTTP/1.1 501 Not Implemented\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 15\r\n"
+            "\r\n"
+            "Not Implemented" ));
+
+        ssize_t sent = send(client_fd, response, strlen(response), 0);
+        // یادم باشه برسی اینکه کامل ارسال بشه
+        goto CLOSE ;
+    }
+    char* request_path = strlib_strtok(NULL , " ") ;
+    SAFE_DO(strlib_strcpy(response , BUFFER_SIZE , 
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: "));
+
+    char* bodyLen = strlib_NumToStr(strlib_strlen(request_path)) ;
+    SAFE_DO( strlib_strncat(response , BUFFER_SIZE , bodyLen , strlib_strlen(bodyLen))) ; free(bodyLen);
+    SAFE_DO( strlib_strncat(response , BUFFER_SIZE , "\r\n\r\n" , 4 )) ;
+    SAFE_DO( strlib_strncat(response , BUFFER_SIZE , request_path , strlib_strlen(request_path))) ;
 
     ssize_t sent = send(client_fd, response, strlen(response), 0);
-
-    // Parse and respond (Steps 2-4)
-    // ...
-    close(client_fd);
+    // یادم باشه برسی اینکه کامل ارسال بشه
+    
+    CLOSE:
+        close(client_fd); 
 }
 close(server_fd);
 return 0;
