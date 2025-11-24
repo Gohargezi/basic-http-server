@@ -31,6 +31,10 @@ $(LIB_DIR)/%.o: $(LIB_DIR)/%.c
 run: $(TARGET)
 	./$(TARGET)
 
+# Run server in background and perform tests
+test: $(TARGET)
+	./test/test.sh
+
 # Clean compiled files
 clean:
 	rm -f $(SRC_DIR)/*.o $(LIB_DIR)/*.o $(TARGET)

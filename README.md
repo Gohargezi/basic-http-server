@@ -19,3 +19,7 @@ A list of references reviewed before starting the project.
 
 - [https://man7.org/linux/man-pages/man2/send.2.html](https://man7.org/linux/man-pages/man2/send.2.html)
 
+- [https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Messages](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Messages)
+
+- 
+
