@@ -30,14 +30,17 @@ $(LIB_DIR)/%.o: $(LIB_DIR)/%.c
 # Run server
 run: $(TARGET)
 	./$(TARGET)
-
-# Run server in background and perform tests
+# Run tests (ensure server is built first)
 test: $(TARGET)
-	./test/test.sh
+	cd test && \
+	echo "Building tests..." && \
+	gcc -std=c11 -Wall -Wextra -I../lib -I../src test_server.c unity.c -o test_server && \
+	echo "Running tests..." && \
+	./test_server
 
 # Clean compiled files
 clean:
 	rm -f $(SRC_DIR)/*.o $(LIB_DIR)/*.o $(TARGET)
 
 # Phony targets
-.PHONY: all clean run
+.PHONY: all clean run test

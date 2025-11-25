@@ -7,12 +7,10 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include "../lib/strlib.h"
+#include "../src/config.h"
 #include <errno.h>
 
 
-#define PORT 8080
-#define BUFFER_SIZE 1024
-#define CHUNK_SIZE 1024
 
 
 int create_server_socket() {
@@ -57,10 +55,12 @@ size_t send_http_header( int client_fd , const char* status , const char* conten
     free(bodySize) ;
     if ( strlib_strncat(header , BUFFER_SIZE , "\r\n\r\n" , 4 ) == SIZE_MAX ) return SIZE_MAX ;
     size_t header_len = strlib_strlen(header) ;
-    ssize_t sent = 0 ;
+    size_t sent = 0 ;
     while (sent < header_len)   
     {
-        sent += send(client_fd, &header[sent], header_len - sent, 0);
+        ssize_t s = send(client_fd, &header[sent], header_len - sent, 0);
+        if ( s < 1 ) return SIZE_MAX ;
+        sent += s ;
     }
     return 0 ;
 }
@@ -79,16 +79,20 @@ size_t send_http_body(int client_fd, const char* body , size_t size )
 
 FILE* http_open_requested_file( int client_fd , const char* request_path)
  {
-        size_t pathLen = strlib_strlen(request_path) ;
-        char* path = malloc(( pathLen + 4 ) *sizeof(char)) ;
-        if (strlib_strcpy(path , pathLen + 4, "www") == SIZE_MAX ) goto Internal_Server_Error ;
-        if (strlib_strncat(path , pathLen + 4 , request_path , strlib_strlen(request_path) ) == SIZE_MAX ) goto Internal_Server_Error ; 
+        size_t request_pathLen = strlib_strlen(request_path) ;
+        size_t path_size = request_pathLen + strlib_strlen(PUBLIC_FILES_PATH ) + 1 ;
+        char* path = malloc(( path_size ) *sizeof(char)) ;
+        if (path == NULL ) goto Internal_Server_Error ;
+        if (strlib_strcpy(path , path_size, PUBLIC_FILES_PATH ) == SIZE_MAX ) { free(path) ;  goto Internal_Server_Error ; }
+        if (strlib_strncat(path , path_size , request_path , strlib_strlen(request_path) ) == SIZE_MAX ) { free(path) ; goto Internal_Server_Error ; }
         if (path[strlib_strlen(path)-1 ] == '/')
         {
             free(path) ;
-            path = malloc(( pathLen + 11) *sizeof(char)) ;
-            if (strlib_strcpy(path , pathLen + 11  , request_path) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;} 
-            if (strlib_strncat(path , pathLen + 11  , "index.html" , 10 ) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;}
+            path_size =  request_pathLen + strlib_strlen(INDEX_FILE) + 1 ;
+            path = malloc((path_size) *sizeof(char)) ;
+            if (path == NULL ) goto Internal_Server_Error ;
+            if (strlib_strcpy(path , path_size  , request_path) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;} 
+            if (strlib_strncat(path , path_size , INDEX_FILE , 10 ) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;}
             FILE * fp =  http_open_requested_file(client_fd , path) ;
             free (path) ;
             return fp ;
@@ -99,24 +103,21 @@ FILE* http_open_requested_file( int client_fd , const char* request_path)
         {
             if (errno == ENOENT) 
             {
-                perror("->  ") ;
-                send_http_header(client_fd , "404 Not Found" , "text/plain" , 13 );
-                send_http_body(client_fd , "404 Not Found" , 13) ;
+                send_http_header(client_fd , "404 Not Found" , "text/plain" , strlib_strlen(ERROR_404_MESSAGE) );
+                send_http_body(client_fd , ERROR_404_MESSAGE , strlib_strlen(ERROR_404_MESSAGE)) ;
                 return NULL ;
             } 
             else if (errno == EACCES) 
             {
-                perror("->  ") ;
-                send_http_header(client_fd , "403 Forbidden" , "text/plain" , 10 );
-                send_http_body(client_fd , "Forbidden" , 10) ;
+                send_http_header(client_fd , "403 Forbidden" , "text/plain" , strlib_strlen(ERROR_403_MESSAGE) );
+                send_http_body(client_fd , ERROR_403_MESSAGE , strlib_strlen(ERROR_403_MESSAGE)) ;
                 return NULL ;
             } 
             else 
             {
-                perror("->  ") ;
                 Internal_Server_Error :
-                send_http_header(client_fd , "500 Internal Server Error" , "text/plain" , 21 );
-                send_http_body(client_fd , "Internal Server Error" , 21) ;
+                send_http_header(client_fd , "500 Internal Server Error" , "text/plain" , strlib_strlen(ERROR_500_MESSAGE) );
+                send_http_body(client_fd , ERROR_500_MESSAGE , strlib_strlen(ERROR_500_MESSAGE)) ;
                 return NULL ;
             }
         }
@@ -148,11 +149,11 @@ size_t send_http_file (int client_fd , FILE* fp , const char * fileType )
 int main() 
 {
     int server_fd = create_server_socket() ;
+    char buffer[BUFFER_SIZE] = {0};
     while (1) 
     {
         struct sockaddr_in address;
         int addrlen = sizeof(address);
-        char buffer[BUFFER_SIZE] = {0};
         int client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
         if (client_fd < 0) 
         {
@@ -167,21 +168,21 @@ int main()
             continue;
         }
         buffer[valread] = '\0';
-
+        
         //__________________________________________________
 
-        char response [BUFFER_SIZE] ;
         char* method = strlib_strtok(buffer , " ") ;
         if (strlib_strcmp(method , "GET") != STRCMP_EQUAL) 
         {
-            send_http_header(client_fd , "501 Not Implemented" , "text/plain" , 15) ;
-            send_http_body(client_fd , "Not Implemented" , 15) ;
+            send_http_header(client_fd , "501 Not Implemented" , "text/plain" , strlib_strlen(ERROR_501_MESSAGE)) ;
+            send_http_body(client_fd , ERROR_501_MESSAGE , strlib_strlen(ERROR_501_MESSAGE)) ;
             close(client_fd);
+            continue;
         }
 
         char* request_path = strlib_strtok(NULL , " ") ;
         FILE *fp = http_open_requested_file(client_fd , request_path) ;
-        if (fp == NULL) continue;
+        if (fp == NULL) { close(client_fd);  continue; }
         send_http_file(client_fd , fp , "text/html") ;
         
         close(client_fd); 
@@ -189,3 +190,5 @@ int main()
     close(server_fd);
     return 0;
 }
+
+
