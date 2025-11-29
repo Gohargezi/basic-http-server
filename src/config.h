@@ -2,6 +2,7 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define CHUNK_SIZE 1024
+#define EXT_LEN 32
 
 #define ERROR_501_MESSAGE "Not Implemented"
 #define ERROR_404_MESSAGE "404 Not Found"

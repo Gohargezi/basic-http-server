@@ -13,6 +13,12 @@
 
 
 
+typedef struct {
+    FILE *fp;
+    char extension[EXT_LEN];
+} FileWithExt;
+
+
 int create_server_socket() {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == 0) {
@@ -77,15 +83,19 @@ size_t send_http_body(int client_fd, const char* body , size_t size )
     return 0 ;
 }
 
-FILE* http_open_requested_file( int client_fd , const char* request_path)
+FileWithExt http_open_requested_file( int client_fd , const char* request_path)
  {
+        FileWithExt f = {.extension = '\0' , .fp = NULL }; 
         size_t request_pathLen = strlib_strlen(request_path) ;
         size_t path_size = request_pathLen + strlib_strlen(PUBLIC_FILES_PATH ) + 1 ;
         char* path = malloc(( path_size ) *sizeof(char)) ;
         if (path == NULL ) goto Internal_Server_Error ;
         if (strlib_strcpy(path , path_size, PUBLIC_FILES_PATH ) == SIZE_MAX ) { free(path) ;  goto Internal_Server_Error ; }
         if (strlib_strncat(path , path_size , request_path , strlib_strlen(request_path) ) == SIZE_MAX ) { free(path) ; goto Internal_Server_Error ; }
-        if (path[strlib_strlen(path)-1 ] == '/')
+        if (strlib_find(path , "..") != SIZE_MAX ) { free(path) ;  goto  Forbidden_Error ; }
+        struct stat st;
+        stat(path , &st) ;
+        if (S_ISDIR(st.st_mode))   
         {
             free(path) ;
             path_size =  request_pathLen + strlib_strlen(INDEX_FILE) + 1 ;
@@ -93,35 +103,45 @@ FILE* http_open_requested_file( int client_fd , const char* request_path)
             if (path == NULL ) goto Internal_Server_Error ;
             if (strlib_strcpy(path , path_size  , request_path) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;} 
             if (strlib_strncat(path , path_size , INDEX_FILE , 10 ) == SIZE_MAX ) {free (path) ; goto Internal_Server_Error ;}
-            FILE * fp =  http_open_requested_file(client_fd , path) ;
+            f =  http_open_requested_file(client_fd , path) ;
             free (path) ;
-            return fp ;
+            return f ;
         }
-        FILE *fp = fopen(path, "r");
-        free(path) ;
-        if (fp == NULL) 
+        f.fp = fopen(path, "r");
+        if (f.fp == NULL) 
         {
             if (errno == ENOENT) 
             {
                 send_http_header(client_fd , "404 Not Found" , "text/plain" , strlib_strlen(ERROR_404_MESSAGE) );
                 send_http_body(client_fd , ERROR_404_MESSAGE , strlib_strlen(ERROR_404_MESSAGE)) ;
-                return NULL ;
+                return f ;
             } 
             else if (errno == EACCES) 
             {
+                Forbidden_Error :
                 send_http_header(client_fd , "403 Forbidden" , "text/plain" , strlib_strlen(ERROR_403_MESSAGE) );
                 send_http_body(client_fd , ERROR_403_MESSAGE , strlib_strlen(ERROR_403_MESSAGE)) ;
-                return NULL ;
+                return f ;
             } 
             else 
             {
                 Internal_Server_Error :
                 send_http_header(client_fd , "500 Internal Server Error" , "text/plain" , strlib_strlen(ERROR_500_MESSAGE) );
                 send_http_body(client_fd , ERROR_500_MESSAGE , strlib_strlen(ERROR_500_MESSAGE)) ;
-                return NULL ;
+                return f ;
             }
         }
-        return fp ;
+
+        char *token;
+        char *last_token = NULL;
+        token = strlib_strtok(path, ".");
+        while (token != NULL) {
+            last_token = token;
+            token = strlib_strtok(NULL, ".");
+        }
+        strlib_strcpy(f.extension , EXT_LEN , last_token ) ;
+        free(path) ;
+        return f ;
  }
 
 size_t send_http_file (int client_fd , FILE* fp , const char * fileType )
@@ -170,7 +190,6 @@ int main()
         buffer[valread] = '\0';
         
         //__________________________________________________
-
         char* method = strlib_strtok(buffer , " ") ;
         if (strlib_strcmp(method , "GET") != STRCMP_EQUAL) 
         {
@@ -181,14 +200,18 @@ int main()
         }
 
         char* request_path = strlib_strtok(NULL , " ") ;
-        FILE *fp = http_open_requested_file(client_fd , request_path) ;
-        if (fp == NULL) { close(client_fd);  continue; }
-        send_http_file(client_fd , fp , "text/html") ;
-        
+        FileWithExt f = http_open_requested_file(client_fd , request_path) ;
+        if (f.fp == NULL) { close(client_fd);  continue; }
+        if (strlib_strcmp(f.extension , "png") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "image/png") ;
+        else if (strlib_strcmp(f.extension , "webp") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "image/webp") ;
+        else if (strlib_strcmp(f.extension , "mp3") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "audio/mpeg") ;
+        else if (strlib_strcmp(f.extension , "html") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "text/html") ;
+        else if (strlib_strcmp(f.extension , "js") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "application/javascript") ;
+        else if (strlib_strcmp(f.extension , "css") == STRCMP_EQUAL) send_http_file(client_fd , f.fp , "text/css") ;
+        else send_http_file(client_fd , f.fp , "application/octet-stream") ;
+
         close(client_fd); 
     }
     close(server_fd);
     return 0;
 }
-
-
